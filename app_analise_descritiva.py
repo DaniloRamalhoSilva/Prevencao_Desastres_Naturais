@@ -1,5 +1,4 @@
 # app_analise_descritiva.py
-
 import streamlit as st
 import pandas as pd
 import plotly.express as px
@@ -7,14 +6,7 @@ from datetime import timedelta
 
 @st.cache_data
 def load_data(path_csv: str) -> pd.DataFrame:
-    """
-    Carrega o CSV e detecta automaticamente a coluna de data/hora.
-    Renomeia colunas:
-      - data/hora -> 'data'
-      - numero_dias_sem_chuva -> 'dias_sem_chuva'
-      - risco_fogo -> 'risco'
-    Cria também coluna 'data_somente' (data sem hora) para agregações.
-    """
+    # mesma função de carregamento utilizada em app.py
     df = pd.read_csv(path_csv, encoding="utf-8", sep=";")
     coluna_data = None
     for col in df.columns:
@@ -24,13 +16,6 @@ def load_data(path_csv: str) -> pd.DataFrame:
             break
         if coluna_data is None and "data" in nome_minus:
             coluna_data = col
-
-    if coluna_data is None:
-        raise ValueError(
-            "Não foi possível detectar a coluna de data. "
-            "Verifique o cabeçalho do CSV."
-        )
-
     df[coluna_data] = pd.to_datetime(df[coluna_data], dayfirst=True, errors="coerce")
     df = df.rename(columns={
         coluna_data: "data",
@@ -41,56 +26,16 @@ def load_data(path_csv: str) -> pd.DataFrame:
     df["data_somente"] = df["data"].dt.date
     return df
 
-def render():
-    """
-    Função que desenha todo o conteúdo da Aba "Análise Descritiva".
-    """
-    # 1) Carrega dados
-    DATA_PATH = "data/Risco_Fogo.csv"
-    try:
-        df = load_data(DATA_PATH)
-    except Exception as e:
-        st.error(f"Erro ao carregar dados: {e}")
-        return
 
-    # 2) Sidebar / Filtros
-    st.sidebar.header("Filtros")
+def render(estado_sel: str, municipio_sel: str, bioma_sel: str, periodo):
+    # Carrega dados
+    df = load_data("data/Risco_Fogo.csv")
 
-    # 2.1) Filtro por Estado
-    lista_estados = sorted(df["estado"].dropna().unique())
-    estado_sel = st.sidebar.selectbox("Estado", options=["Todos"] + lista_estados)
-
-    # 2.2) Filtro por Município (dependente do estado)
-    if estado_sel != "Todos":
-        df_estado = df[df["estado"] == estado_sel]
-        lista_municipios = sorted(df_estado["municipio"].dropna().unique())
-    else:
-        lista_municipios = sorted(df["municipio"].dropna().unique())
-    municipio_sel = st.sidebar.selectbox("Município", options=["Todos"] + lista_municipios)
-
-    # 2.3) Filtro por Bioma
-    lista_biomas = sorted(df["bioma"].dropna().unique())
-    bioma_sel = st.sidebar.selectbox("Bioma", options=["Todos"] + lista_biomas)
-
-    # 2.4) Filtro por Período
-    data_min = df["data_somente"].min()
-    data_max = df["data_somente"].max()
-    periodo = st.sidebar.date_input(
-        "Período",
-        value=(data_min, data_max),
-        min_value=data_min,
-        max_value=data_max,
-    )
-
-    # 3) Aplicar filtros
+    # Aplica filtros recebidos
     mask = pd.Series(True, index=df.index)
-    if estado_sel != "Todos":
-        mask &= df["estado"] == estado_sel
-    if municipio_sel != "Todos":
-        mask &= df["municipio"] == municipio_sel
-    if bioma_sel != "Todos":
-        mask &= df["bioma"] == bioma_sel
-
+    if estado_sel != "Todos": mask &= df["estado"] == estado_sel
+    if municipio_sel != "Todos": mask &= df["municipio"] == municipio_sel
+    if bioma_sel != "Todos": mask &= df["bioma"] == bioma_sel
     data_inicio, data_fim = periodo
     mask &= (df["data_somente"] >= data_inicio) & (df["data_somente"] <= data_fim)
     df_filtrado = df[mask].copy()
@@ -99,25 +44,25 @@ def render():
     st.markdown("## 📊 KPIs Descritivos")
     col1, col2, col3, col4 = st.columns(4)
 
-    # 4.1) Média de dias sem chuva
+    # Média dias sem chuva
     if not df_filtrado.empty:
         media_dias = df_filtrado["dias_sem_chuva"].mean()
         col1.metric("Média dias sem chuva", f"{media_dias:.1f}")
     else:
         col1.metric("Média dias sem chuva", "—")
 
-    # 4.2) Total de registros
+    # Total registros
     total_reg = len(df_filtrado)
     col2.metric("Total de Registros", f"{total_reg:,}")
 
-    # 4.3) Última data registrada (no filtro)
+    # Última data registrada
     if not df_filtrado.empty:
         ultima_data = df_filtrado["data_somente"].max()
         col3.metric("Última Data Registrada", ultima_data.strftime("%d/%m/%Y"))
     else:
         col3.metric("Última Data Registrada", "—")
 
-    # 4.4) Risco médio
+    # Risco médio
     if not df_filtrado.empty:
         media_risco = df_filtrado["risco"].mean()
         col4.metric("Risco Médio", f"{media_risco:.2f}")
